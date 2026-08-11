@@ -1,0 +1,39 @@
+{
+    "name": "ephpm/db-doctrine",
+    "description": "Doctrine DBAL driver for ePHPm's in-process database bridge — SQL through the ephpm_db_* SAPI functions, zero socket round-trips.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["doctrine", "dbal", "driver", "ephpm", "sqlite", "sapi"],
+    "homepage": "https://ephpm.dev",
+    "support": {
+        "issues": "https://github.com/ephpm/db-doctrine/issues",
+        "source": "https://github.com/ephpm/db-doctrine"
+    },
+    "require": {
+        "php": "^8.2",
+        "doctrine/dbal": "^4.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.5 || ^11.0"
+    },
+    "suggest": {
+        "ext-pdo_sqlite": "Required by the PdoSqliteBridge test/development fake"
+    },
+    "autoload": {
+        "psr-4": {
+            "Ephpm\\DoctrineDriver\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Ephpm\\DoctrineDriver\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "minimum-stability": "stable"
+}
