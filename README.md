@@ -46,9 +46,9 @@ $posts = $conn->fetchAllAssociative('SELECT * FROM posts');
 
 - **PHP 8.2+**
 - **`doctrine/dbal` ^4.0** (Composer pulls this in automatically)
-- **The ePHPm runtime, current `main`, with `[db.sqlite]` configured.**
-  The `ephpm_db_*` SAPI functions this driver calls are on ePHPm's
-  unreleased `main` branch — they are not in any tagged release yet.
+- **ePHPm v0.6.3 or newer** (current release: v0.8.6), **with
+  `[db.sqlite]` configured.** The `ephpm_db_*` SAPI functions this
+  driver calls first shipped in the v0.6.3 release.
   They are registered only when the embedded database is active
   (`[db.sqlite]` in `ephpm.toml`); without it, every query throws
   `ephpm_db: no embedded database is active (requires [db.sqlite])`.
@@ -66,8 +66,14 @@ var_dump(function_exists('ephpm_db_query'));   // expect bool(true)
 
 ## Install
 
+ePHPm packages are distributed via their GitHub repositories, not
+Packagist. Add this repo as a Composer `vcs` repository, then require
+the package (`ephpm/db-doctrine` is tagged `v0.1.0`, so `^0.1`
+resolves):
+
 ```bash
-composer require ephpm/db-doctrine
+composer config repositories.ephpm/db-doctrine vcs https://github.com/ephpm/db-doctrine
+composer require ephpm/db-doctrine:^0.1
 ```
 
 ---
