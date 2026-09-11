@@ -15,39 +15,64 @@ use Doctrine\DBAL\Exception\InvalidColumnIndex;
  * the bridge's associative rows preserve insertion order, which is the
  * SELECT-list order — fetchNumeric()/getColumnName() rely on that.
  *
- * Known limitation: the bridge carries no column metadata separate from
- * the rows, so a result set with zero rows reports columnCount() = 0 and
- * has no column names.
+ * Column metadata comes from the executed statement via `ephpm_db_run()`,
+ * so a result set with zero rows still reports its column count and names
+ * (ePHPm issue #262) — the former "no column metadata without rows"
+ * limitation is gone.
  */
 final class Result implements DriverResultInterface
 {
     private int $cursor = 0;
 
-    /** @var list<string> */
-    private array $columnNames;
-
     /**
      * @param list<array<string, float|int|string|null>> $rows
-     * @param int $affectedRows rowCount() source: the row count for
-     *                          row-returning statements, affected_rows
-     *                          for writes
+     * @param int                                         $affectedRows rowCount()
+     *        source: the row count for row-returning statements,
+     *        affected_rows for writes
+     * @param list<string>                                $columnNames column
+     *        names in SELECT-list order, carried even when $rows is empty
      */
     private function __construct(
         private array $rows,
         private readonly int $affectedRows,
+        private readonly array $columnNames,
     ) {
-        $this->columnNames = $rows === [] ? [] : \array_map(\strval(...), \array_keys($rows[0]));
     }
 
     /** @param list<array<string, float|int|string|null>> $rows */
     public static function forRows(array $rows): self
     {
-        return new self($rows, \count($rows));
+        $names = $rows === [] ? [] : \array_map(\strval(...), \array_keys($rows[0]));
+
+        return new self($rows, \count($rows), $names);
     }
 
     public static function forWrite(int $affectedRows): self
     {
-        return new self([], $affectedRows);
+        return new self([], $affectedRows, []);
+    }
+
+    /**
+     * Build from the unified `ephpm_db_run()` result: rows and column
+     * metadata for a rowset (column names present even with zero rows),
+     * affected_rows for a write.
+     *
+     * @param array{has_rowset: bool, rows?: list<array<string, float|int|string|null>>, columns?: list<array{name: string, type?: ?string}>, affected_rows?: int, last_insert_id?: int} $result
+     */
+    public static function fromRun(array $result): self
+    {
+        $names = \array_map(
+            static fn (array $c): string => (string) ($c['name'] ?? ''),
+            $result['columns'] ?? [],
+        );
+
+        if ($result['has_rowset'] ?? false) {
+            $rows = $result['rows'] ?? [];
+
+            return new self($rows, \count($rows), $names);
+        }
+
+        return new self([], (int) ($result['affected_rows'] ?? 0), $names);
     }
 
     public function fetchNumeric(): array|false

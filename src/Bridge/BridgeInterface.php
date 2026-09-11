@@ -47,4 +47,24 @@ interface BridgeInterface
      * @throws \Exception on any database error (see interface docs)
      */
     public function execute(string $sql, array $params = []): array;
+
+    /**
+     * Execute SQL once and report what it actually did — the unified entry
+     * point mirroring the native `ephpm_db_run()` (ePHPm issue #263).
+     *
+     * `has_rowset` is read from the executed statement, so a statement is
+     * never mis-classified by its first keyword (a writable CTE reports its
+     * affected-row count and last-insert id correctly). `columns` carries
+     * the column metadata even for a zero-row result set (ePHPm issue #262),
+     * so `Result::columnCount()`/`getColumnName()` work with no rows. `rows`
+     * is empty for an OK outcome; `affected_rows`/`last_insert_id` are zero
+     * for a result set.
+     *
+     * @param list<bool|float|int|string|null> $params
+     *
+     * @return array{has_rowset: bool, rows: list<array<string, float|int|string|null>>, columns: list<array{name: string, type: ?string}>, affected_rows: int, last_insert_id: int}
+     *
+     * @throws \Exception on any database error (see interface docs)
+     */
+    public function run(string $sql, array $params = []): array;
 }

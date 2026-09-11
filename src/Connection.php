@@ -42,15 +42,22 @@ final class Connection implements DriverConnectionInterface
 
     public function query(string $sql): Result
     {
-        return Result::forRows($this->queryBridge($sql, []));
+        return Result::fromRun($this->runBridge($sql, []));
     }
 
     /**
      * MySQL-style string quoting, done without mysqli: backslash-escape
-     * NUL, LF, CR, backslash, single quote, double quote, and Ctrl-Z,
-     * then wrap in single quotes. The output is a MySQL-dialect literal;
-     * litewire's MySQL parser consumes it and re-emits a correctly quoted
-     * SQLite literal.
+     * NUL, LF, CR, backslash, double quote, and Ctrl-Z, then wrap in
+     * single quotes. The output is a MySQL-dialect literal; litewire's
+     * MySQL parser consumes it and re-emits a correctly quoted SQLite
+     * literal.
+     *
+     * The **single quote is doubled (`''`), not backslash-escaped (`\'`)**.
+     * litewire's tenant-path parser rejects a backslash-escaped single
+     * quote as malformed SQL (`'O\'Brien'` fails), whereas `''` is accepted
+     * by both MySQL and SQLite/Turso. Doubling stays unambiguous because
+     * backslashes are still doubled here, so a string can never be broken
+     * out of. See github.com/ephpm/db-wordpress issue #1.
      */
     public function quote(string $value): string
     {
@@ -59,7 +66,7 @@ final class Connection implements DriverConnectionInterface
             "\n" => '\\n',
             "\r" => '\\r',
             '\\' => '\\\\',
-            "'" => "\\'",
+            "'" => "''",
             '"' => '\\"',
             "\x1a" => '\\Z',
         ]) . "'";
@@ -155,6 +162,41 @@ final class Connection implements DriverConnectionInterface
         }
 
         $this->lastInsertId = $result['last_insert_id'];
+
+        return $result;
+    }
+
+    /**
+     * Run a statement through the bridge's unified entry point and report
+     * what it actually did (rows + column metadata + OK metadata). Refreshes
+     * the cached last-insert id for a write outcome, exactly as
+     * {@see executeBridge()} does — a row-returning statement leaves it
+     * untouched.
+     *
+     * Replaces the previous split between {@see queryBridge()} and
+     * {@see executeBridge()} that a prepared {@see Statement} had to pick
+     * with a first-keyword classifier; the answer now comes from the
+     * executed statement (ePHPm issue #263).
+     *
+     * @param list<bool|float|int|string|null> $params
+     *
+     * @return array{has_rowset: bool, rows: list<array<string, float|int|string|null>>, columns: list<array{name: string, type: ?string}>, affected_rows: int, last_insert_id: int}
+     *
+     * @throws BridgeException
+     *
+     * @internal called by {@see Statement} and {@see self::query()}
+     */
+    public function runBridge(string $sql, array $params): array
+    {
+        try {
+            $result = $this->bridge->run($sql, $params);
+        } catch (\Exception $e) {
+            throw BridgeException::fromBridge($e);
+        }
+
+        if (($result['has_rowset'] ?? false) === false) {
+            $this->lastInsertId = $result['last_insert_id'];
+        }
 
         return $result;
     }
