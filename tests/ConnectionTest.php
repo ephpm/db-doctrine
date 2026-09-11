@@ -14,8 +14,13 @@ final class ConnectionTest extends TestCase
     public static function quoteCases(): iterable
     {
         yield 'plain' => ['hello', "'hello'"];
-        yield 'single quote' => ["O'Brien", "'O\\'Brien'"];
+        // Single quote is DOUBLED, not backslash-escaped: litewire's tenant
+        // parser rejects `\'` as malformed SQL (db-wordpress issue #1).
+        yield 'single quote' => ["O'Brien", "'O''Brien'"];
         yield 'double quote' => ['say "hi"', "'say \\\"hi\\\"'"];
+        // A quote adjacent to a backslash still round-trips unambiguously:
+        // the backslash is doubled and the quote is doubled independently.
+        yield 'backslash then quote' => ["a\\'b", "'a\\\\''b'"];
         yield 'backslash' => ['a\\b', "'a\\\\b'"];
         yield 'newline' => ["a\nb", "'a\\nb'"];
         yield 'carriage return' => ["a\rb", "'a\\rb'"];

@@ -46,7 +46,7 @@ $posts = $conn->fetchAllAssociative('SELECT * FROM posts');
 
 - **PHP 8.2+**
 - **`doctrine/dbal` ^4.0** (Composer pulls this in automatically)
-- **ePHPm v0.6.3 or newer** (current release: v0.8.6), **with
+- **ePHPm v0.6.3 or newer** (current release: v0.10.2), **with
   `[db.sqlite]` configured.** The `ephpm_db_*` SAPI functions this
   driver calls first shipped in the v0.6.3 release.
   They are registered only when the embedded database is active
@@ -147,23 +147,25 @@ which the last column notes.
 | `transactional()` commit and rollback-on-throw | Verified. |
 | Nested transactions (savepoints) | Verified against the fake; litewire passes `SAVEPOINT` / `RELEASE` / `ROLLBACK TO` through to SQLite, so the platform's savepoint SQL survives translation. |
 | Exception mapping (1062, 1064, 1205, 1290, 1452 → DBAL classes) | Verified. Unmapped codes (incl. 1105) become generic `DriverException`. |
-| `quote()` | Verified as string output (MySQL-style backslash escaping). The output is a MySQL-dialect literal consumed by litewire's MySQL parser; it is **not** valid raw-SQLite quoting, so it cannot be round-tripped through the pdo_sqlite fake. Prefer prepared statements. |
+| `quote()` | Verified as string output. Backslash specials (`\n`, `\r`, NUL, `\`, `"`, Ctrl-Z) are backslash-escaped MySQL-style, but the **single quote is doubled (`''`)** — litewire's tenant parser rejects a backslash-escaped `\'` as malformed SQL (db-wordpress issue #1). The output is a MySQL-dialect literal consumed by litewire's MySQL parser. Prefer prepared statements. |
 | Platform selection (`MySQL80Platform` from the advertised `8.0.36-litewire` version) | Verified. |
 | Schema manager: `createTable()` via platform DDL + `listTableNames()` | Verified against the fake. On the real runtime this rides litewire's `information_schema.TABLES` and `SELECT DATABASE()` emulation. |
 | Schema manager: `introspectTable()` / column introspection | **Not supported.** DBAL 4's MySQL column introspection query joins `information_schema.COLUMNS` with `information_schema.TABLES`; litewire currently misdetects that query as a table listing, and its COLUMNS emulation lacks the `COLUMN_TYPE` / `EXTRA` / collation columns DBAL reads. Expect wrong results until the bridge closes this gap. |
 | `getNativeConnection()` | Returns the `BridgeInterface` instance — there is no underlying socket/handle object. |
-| Row-count of a top-level writable CTE (`WITH ... UPDATE/DELETE`) | **Not observable.** The statement classifies as row-returning, the write executes, but `rowCount()` reports 0. |
-| `columnCount()` / `getColumnName()` on empty result sets | **Degrades to 0 / error.** The bridge carries no column metadata separate from rows. |
+| Row-count of a top-level writable CTE (`WITH ... UPDATE/DELETE`) | Verified. `ephpm_db_run()` reports `has_rowset` from the executed statement, so the write's `rowCount()` is observable (no longer misclassified as row-returning). |
+| `columnCount()` / `getColumnName()` on empty result sets | Verified. Column metadata comes from the executed statement (`ephpm_db_run()`), so a zero-row result set still reports its columns. |
 
 ---
 
 ## Behavior notes
 
-**Statement routing.** The `ephpm_db_*` surface is split into a
-row-returning call and an OK-metadata call. The driver routes by first
-keyword: `SELECT` / `SHOW` / `DESCRIBE` / `EXPLAIN` / `WITH` / `VALUES` /
-`TABLE` / `PRAGMA` go through `ephpm_db_query()`; everything else through
-`ephpm_db_execute()`.
+**Statement routing.** Every statement goes through the unified
+`ephpm_db_run()`, which executes once and reports `has_rowset` (read from
+the executed statement, not guessed from the first keyword), the rows, the
+column metadata, and the affected-rows / last-insert-id metadata. There is
+no keyword classifier. On an ePHPm too old to have `ephpm_db_run()` the
+bridge transparently falls back to the previous `ephpm_db_query()` /
+`ephpm_db_execute()` split, preserving the v0.6.3 minimum.
 
 **`lastInsertId()` ordering contract.** The value is cached from the most
 recent statement this connection routed through `ephpm_db_execute()` —

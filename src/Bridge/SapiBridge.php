@@ -35,4 +35,71 @@ final class SapiBridge implements BridgeInterface
         /** @var array{affected_rows: int, last_insert_id: int} */
         return \ephpm_db_execute($sql, $params);
     }
+
+    public function run(string $sql, array $params = []): array
+    {
+        if (\function_exists('ephpm_db_run')) {
+            /** @var array{has_rowset: bool, rows: list<array<string, float|int|string|null>>, columns: list<array{name: string, type: ?string}>, affected_rows: int, last_insert_id: int} */
+            return \ephpm_db_run($sql, $params);
+        }
+
+        // Floor-preserving fallback for an ePHPm predating ephpm_db_run:
+        // route by first keyword and synthesize the unified shape. Column
+        // names for a zero-row result come from ephpm_db_columns() when the
+        // build has it, else from the first row (the pre-#262 best effort).
+        if (self::mayReturnRows($sql)) {
+            $rows = $this->query($sql, $params);
+            $columns = \function_exists('ephpm_db_columns')
+                ? \ephpm_db_columns()
+                : self::columnsFromRows($rows);
+
+            return [
+                'has_rowset' => true,
+                'rows' => $rows,
+                'columns' => $columns,
+                'affected_rows' => 0,
+                'last_insert_id' => 0,
+            ];
+        }
+
+        $ok = $this->execute($sql, $params);
+
+        return [
+            'has_rowset' => false,
+            'rows' => [],
+            'columns' => [],
+            'affected_rows' => (int) ($ok['affected_rows'] ?? 0),
+            'last_insert_id' => (int) ($ok['last_insert_id'] ?? 0),
+        ];
+    }
+
+    /** Keyword classifier used ONLY by the {@see run()} fallback. */
+    private static function mayReturnRows(string $sql): bool
+    {
+        $q = ltrim($sql, " \t\r\n(");
+        while (preg_match('/^(?:\/\*.*?\*\/|--[^\n]*(?:\n|$)|#[^\n]*(?:\n|$))\s*/s', $q, $m)) {
+            $q = substr($q, \strlen($m[0]));
+        }
+
+        return (bool) preg_match('/^(?:SELECT|SHOW|DESCRIBE|DESC|EXPLAIN|WITH|VALUES|TABLE|PRAGMA)\b/i', $q);
+    }
+
+    /**
+     * @param list<array<string, float|int|string|null>> $rows
+     *
+     * @return list<array{name: string, type: ?string}>
+     */
+    private static function columnsFromRows(array $rows): array
+    {
+        if (!isset($rows[0])) {
+            return [];
+        }
+
+        $columns = [];
+        foreach (array_keys($rows[0]) as $name) {
+            $columns[] = ['name' => (string) $name, 'type' => null];
+        }
+
+        return $columns;
+    }
 }

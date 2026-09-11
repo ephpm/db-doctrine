@@ -99,14 +99,19 @@ final class ResultTest extends TestCase
         $result->getColumnName(2);
     }
 
-    public function testEmptyResultSetHasNoColumnMetadata(): void
+    public function testEmptyResultSetStillCarriesColumnMetadata(): void
     {
-        // Documented bridge limitation: no column metadata without rows.
+        // Column metadata now comes from the executed statement
+        // (ephpm_db_run(), issue #262), so a zero-row result set reports its
+        // columns — the former "no column metadata without rows" limitation
+        // is gone.
         $result = $this->seeded()->query('SELECT id, label FROM nums WHERE id = 99');
 
-        self::assertSame(0, $result->columnCount());
         self::assertSame(0, $result->rowCount());
         self::assertFalse($result->fetchAssociative());
+        self::assertSame(2, $result->columnCount());
+        self::assertSame('id', $result->getColumnName(0));
+        self::assertSame('label', $result->getColumnName(1));
     }
 
     public function testFreeDiscardsRows(): void

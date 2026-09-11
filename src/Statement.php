@@ -51,13 +51,11 @@ final class Statement implements DriverStatementInterface
         \ksort($params);
         $params = \array_values($params);
 
-        if (QueryClassifier::returnsRows($this->sql)) {
-            return Result::forRows($this->connection->queryBridge($this->sql, $params));
-        }
-
-        $ok = $this->connection->executeBridge($this->sql, $params);
-
-        return Result::forWrite($ok['affected_rows']);
+        // The unified ephpm_db_run() reports has_rowset from the executed
+        // statement, so there is no first-keyword classification: a writable
+        // CTE (WITH ... DELETE) reports its affected-row count correctly, and
+        // a zero-row result set still carries its column metadata.
+        return Result::fromRun($this->connection->runBridge($this->sql, $params));
     }
 
     /**

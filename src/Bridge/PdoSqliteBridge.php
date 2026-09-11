@@ -37,7 +37,7 @@ final class PdoSqliteBridge implements BridgeInterface
             return $shimmed;
         }
 
-        $stmt = $this->run($this->rewrite($sql), $params);
+        $stmt = $this->prepareAndExecute($this->rewrite($sql), $params);
         /** @var list<array<string, float|int|string|null>> $rows */
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
         $stmt->closeCursor();
@@ -47,7 +47,7 @@ final class PdoSqliteBridge implements BridgeInterface
 
     public function execute(string $sql, array $params = []): array
     {
-        $stmt = $this->run($this->rewrite($sql), $params);
+        $stmt = $this->prepareAndExecute($this->rewrite($sql), $params);
         $affected = $stmt->rowCount();
         $stmt->closeCursor();
 
@@ -57,13 +57,90 @@ final class PdoSqliteBridge implements BridgeInterface
         ];
     }
 
+    public function run(string $sql, array $params = []): array
+    {
+        // A shimmed row query (VERSION()/DATABASE()/information_schema) is
+        // always a rowset; carry its column names from the synthetic keys.
+        $shimmed = $this->shimRowQuery($sql);
+        if ($shimmed !== null) {
+            return [
+                'has_rowset' => true,
+                'rows' => $shimmed,
+                'columns' => self::columnsFromRows($shimmed),
+                'affected_rows' => 0,
+                'last_insert_id' => 0,
+            ];
+        }
+
+        $stmt = $this->prepareAndExecute($this->rewrite($sql), $params);
+        $ncols = $stmt->columnCount();
+        $hasRowset = $ncols > 0;
+
+        // Column metadata read from the statement, so it is present even for
+        // a zero-row result set (issue #262).
+        $columns = [];
+        for ($i = 0; $i < $ncols; $i++) {
+            /** @var array<string, mixed>|false $meta */
+            $meta = $stmt->getColumnMeta($i);
+            $decl = \is_array($meta) ? ($meta['sqlite:decl_type'] ?? null) : null;
+            $columns[] = [
+                'name' => \is_array($meta) ? (string) ($meta['name'] ?? '') : '',
+                'type' => \is_string($decl) && $decl !== '' ? $decl : null,
+            ];
+        }
+
+        if ($hasRowset) {
+            /** @var list<array<string, float|int|string|null>> $rows */
+            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $stmt->closeCursor();
+
+            return [
+                'has_rowset' => true,
+                'rows' => $rows,
+                'columns' => $columns,
+                'affected_rows' => 0,
+                'last_insert_id' => 0,
+            ];
+        }
+
+        $affected = $stmt->rowCount();
+        $stmt->closeCursor();
+
+        return [
+            'has_rowset' => false,
+            'rows' => [],
+            'columns' => [],
+            'affected_rows' => $affected,
+            'last_insert_id' => (int) $this->pdo->lastInsertId(),
+        ];
+    }
+
+    /**
+     * @param list<array<string, float|int|string|null>> $rows
+     *
+     * @return list<array{name: string, type: ?string}>
+     */
+    private static function columnsFromRows(array $rows): array
+    {
+        if (!isset($rows[0])) {
+            return [];
+        }
+
+        $columns = [];
+        foreach (array_keys($rows[0]) as $name) {
+            $columns[] = ['name' => (string) $name, 'type' => null];
+        }
+
+        return $columns;
+    }
+
     /**
      * Prepare, bind, and execute, converting PDO errors into the
      * "SQLSTATE[xxxxx]: message" / MySQL-errno shape the natives throw.
      *
      * @param list<bool|float|int|string|null> $params
      */
-    private function run(string $sql, array $params): \PDOStatement
+    private function prepareAndExecute(string $sql, array $params): \PDOStatement
     {
         try {
             $stmt = $this->pdo->prepare($sql);
