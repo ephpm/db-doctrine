@@ -46,7 +46,7 @@ $posts = $conn->fetchAllAssociative('SELECT * FROM posts');
 
 - **PHP 8.2+**
 - **`doctrine/dbal` ^4.0** (Composer pulls this in automatically)
-- **ePHPm v0.6.3 or newer** (current release: v0.10.2), **with
+- **ePHPm v0.6.3 or newer** (see the [ePHPm releases](https://github.com/ephpm/ephpm/releases) for the latest version), **with
   `[db.sqlite]` configured.** The `ephpm_db_*` SAPI functions this
   driver calls first shipped in the v0.6.3 release.
   They are registered only when the embedded database is active
